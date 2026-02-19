@@ -9,12 +9,15 @@ const REFRESH_TOKEN_EXPIRES_DAYS = 7;
 export class AuthService {
 
     static async register(email: string, password: string, phoneNumber?: string) {
+
+        const normalizedPhone = phoneNumber?.trim();
+
         const existingUser = await prisma.user.findFirst({
             where: {
                 OR: [
                     { email },
-                    phoneNumber ? { phoneNumber } : {}
-                ]
+                    normalizedPhone ? { phoneNumber: normalizedPhone } : undefined
+                ].filter(Boolean) as any
             },
         });
 
@@ -28,7 +31,7 @@ export class AuthService {
             data: {
                 email,
                 passwordHash,
-                phoneNumber,
+                phoneNumber: normalizedPhone,
             },
         });
 
@@ -36,7 +39,6 @@ export class AuthService {
     }
 
     static async login(email: string, password: string, userAgent?: string, ip?: string) {
-
         const user = await prisma.user.findUnique({
             where: { email },
         });
@@ -47,7 +49,7 @@ export class AuthService {
             throw new Error("Account temporarily locked");
         }
 
-        const validPassword = await bcrypt.compare(password, user.passwordHash);
+        const validPassword = await bcrypt.compare(password, user.passwordHash || "");
 
         if (!validPassword) {
             await prisma.user.update({
@@ -92,6 +94,100 @@ export class AuthService {
                 expiresAt: new Date(
                     Date.now() + REFRESH_TOKEN_EXPIRES_DAYS * 24 * 60 * 60 * 1000
                 ),
+            },
+        });
+
+        return { accessToken, refreshToken };
+    }
+
+    static async sendOtp(phoneNumber: string) {
+
+        const normalizedPhone = phoneNumber.trim();
+
+        const user = await prisma.user.findUnique({
+            where: { phoneNumber: normalizedPhone },
+        });
+
+        console.log("Searching for phone:", normalizedPhone);
+        console.log("User found:", user);
+
+        if (!user) {
+            throw new Error("User not found");
+        }
+
+        const otp = Math.floor(100000 + Math.random() * 900000).toString();
+        const otpExpiresAt = new Date(Date.now() + 5 * 60 * 1000);
+
+        await prisma.user.update({
+            where: { id: user.id },
+            data: {
+                otp,
+                otpExpiresAt,
+            },
+        });
+
+        console.log(`OTP for ${normalizedPhone}: ${otp}`);
+
+        return { message: "OTP sent successfully" };
+    }
+
+    static async verifyOtp(
+        phoneNumber: string,
+        otp: string,
+        userAgent?: string,
+        ip?: string
+    ) {
+
+        const normalizedPhone = phoneNumber.trim();
+
+        const user = await prisma.user.findUnique({
+            where: { phoneNumber: normalizedPhone },
+        });
+
+        if (!user || !user.otp || !user.otpExpiresAt) {
+            throw new Error("Invalid OTP");
+        }
+
+        if (new Date() > user.otpExpiresAt) {
+            throw new Error("OTP expired");
+        }
+
+        if (user.otp !== otp) {
+            throw new Error("Invalid OTP");
+        }
+
+        await prisma.user.update({
+            where: { id: user.id },
+            data: {
+                otp: null,
+                otpExpiresAt: null,
+            },
+        });
+
+        const sessionId = uuidv4();
+
+        const refreshToken = jwt.sign(
+            { sub: user.id, sid: sessionId },
+            process.env.REFRESH_TOKEN_SECRET!,
+            { expiresIn: "7d" }
+        );
+
+        const accessToken = jwt.sign(
+            { sub: user.id, sid: sessionId },
+            process.env.ACCESS_TOKEN_SECRET!,
+            { expiresIn: "15m" }
+        );
+
+        const tokenHash = await bcrypt.hash(refreshToken, 10);
+
+        await prisma.session.create({
+            data: {
+                id: sessionId,
+                userId: user.id,
+                tokenHash,
+                userAgent,
+                ip,
+                expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
             },
         });
 
@@ -219,92 +315,5 @@ export class AuthService {
             data: { revokedAt: new Date() },
         });
     }
-
-    static async sendOtp(phoneNumber: string) {
-        const user = await prisma.user.findUnique({
-            where: { phoneNumber },
-        });
-
-        if (!user) {
-            // In a real app, do not reveal user existence
-            throw new Error("User not found");
-        }
-
-        // Generate 6 digit OTP
-        const otp = Math.floor(100000 + Math.random() * 900000).toString();
-        const otpExpiresAt = new Date(Date.now() + 5 * 60 * 1000); // 5 minutes
-
-        await prisma.user.update({
-            where: { id: user.id },
-            data: {
-                otp,
-                otpExpiresAt,
-            },
-        });
-
-        // Log OTP to console (Simulating SMS service)
-        console.log(`[OTP SERVICE] Sent OTP ${otp} to ${phoneNumber}`);
-
-        return { message: "OTP sent successfully" };
-    }
-
-    static async verifyOtp(phoneNumber: string, otp: string, userAgent?: string, ip?: string) {
-        const user = await prisma.user.findUnique({
-            where: { phoneNumber },
-        });
-
-        if (!user || !user.otp || !user.otpExpiresAt) {
-            throw new Error("Invalid OTP");
-        }
-
-        if (user.otp !== otp) {
-            throw new Error("Invalid OTP");
-        }
-
-        if (new Date() > user.otpExpiresAt) {
-            throw new Error("OTP expired");
-        }
-
-        // Clear OTP
-        await prisma.user.update({
-            where: { id: user.id },
-            data: {
-                otp: null,
-                otpExpiresAt: null,
-                failedAttempts: 0, // Reset failed attempts on successful login
-            },
-        });
-
-        // Generate tokens (Reuse existing logic or extract to helper)
-        const sessionId = uuidv4();
-
-        const refreshToken = jwt.sign(
-            { sub: user.id, sid: sessionId },
-            process.env.REFRESH_TOKEN_SECRET!,
-            { expiresIn: `${REFRESH_TOKEN_EXPIRES_DAYS}d` }
-        );
-
-        const accessToken = jwt.sign(
-            { sub: user.id, sid: sessionId },
-            process.env.ACCESS_TOKEN_SECRET!,
-            { expiresIn: ACCESS_TOKEN_EXPIRES }
-        );
-
-        const tokenHash = await bcrypt.hash(refreshToken, 10);
-
-        await prisma.session.create({
-            data: {
-                id: sessionId,
-                userId: user.id,
-                tokenHash,
-                userAgent,
-                ip,
-                expiresAt: new Date(
-                    Date.now() + REFRESH_TOKEN_EXPIRES_DAYS * 24 * 60 * 60 * 1000
-                ),
-            },
-        });
-
-        return { accessToken, refreshToken };
-    }
 }
+

@@ -1,21 +1,21 @@
 import { Request, Response } from "express";
 import { AuthService } from "./auth.service";
 import { AuthRequest } from "../../middleware/auth.middleware";
-import prisma from "../../config/prisma";
 
 export class AuthController {
 
     static async register(req: Request, res: Response) {
         try {
-            const { email, password } = req.body;
+            const { email, password, phoneNumber } = req.body;
 
-            const user = await AuthService.register(email, password);
+            const user = await AuthService.register(email, password, phoneNumber);
 
             res.status(201).json({
                 message: "User created",
                 user: {
                     id: user.id,
                     email: user.email,
+                    phoneNumber: user.phoneNumber
                 },
             });
         } catch (err: any) {
@@ -30,7 +30,34 @@ export class AuthController {
             const tokens = await AuthService.login(
                 email,
                 password,
-                req.headers["user-agent"],
+                (req.headers["user-agent"] as string) || undefined,
+                req.ip
+            );
+
+            res.status(200).json(tokens);
+        } catch (err: any) {
+            res.status(400).json({ message: err.message });
+        }
+    }
+
+    static async sendOtp(req: Request, res: Response) {
+        try {
+            const { phoneNumber } = req.body;
+            const result = await AuthService.sendOtp(phoneNumber);
+            res.status(200).json(result);
+        } catch (err: any) {
+            res.status(400).json({ message: err.message });
+        }
+    }
+
+    static async verifyOtp(req: Request, res: Response) {
+        try {
+            const { phoneNumber, otp } = req.body;
+
+            const tokens = await AuthService.verifyOtp(
+                phoneNumber,
+                otp,
+                (req.headers["user-agent"] as string) || undefined,
                 req.ip
             );
 
@@ -46,6 +73,7 @@ export class AuthController {
 
             const tokens = await AuthService.refresh(refreshToken);
 
+            res.status(200).json(tokens);
         } catch (err: any) {
             res.status(401).json({ message: err.message });
         }
@@ -69,7 +97,7 @@ export class AuthController {
 
             const sessionId = req.body.sessionId || req.user.sid;
 
-            await AuthService.revokeSession(sessionId, req.user.sub);
+            await AuthService.logout(sessionId);
 
             res.status(200).json({ message: "Logged out successfully" });
         } catch (err: any) {
@@ -83,54 +111,29 @@ export class AuthController {
     }
 
 
-
-    static async revokeSession(req: Request, res: Response) {
+    static async revokeSession(req: AuthRequest, res: Response) {
         try {
+            if (!req.user) return res.status(401).json({ message: "Unauthorized" });
             const sessionId = req.params.id;
-            await AuthService.logout(sessionId);
+            // Pass both sessionId and userId to the service
+            await AuthService.revokeSession(sessionId, req.user.sub);
             return res.json({ message: "Session revoked" });
         } catch (error: any) {
             return res.status(400).json({ message: error.message });
         }
     }
 
-    static async revokeAllSessions(req: Request, res: Response) {
+    static async revokeAllSessions(req: AuthRequest, res: Response) {
         try {
-            const userId = (req as any).user.sub;
+            // Fix: req.user is possibly undefined, so check it (already checked in middleware but good specifically for TS)
+            if (!req.user) return res.status(401).json({ message: "Unauthorized" });
+            const userId = req.user.sub;
 
-            await prisma.session.updateMany({
-                where: { userId },
-                data: { revokedAt: new Date() },
-            });
+            await AuthService.revokeAllSessions(userId);
 
             return res.json({ message: "All sessions revoked" });
         } catch (error: any) {
             return res.status(400).json({ message: error.message });
-        }
-    }
-
-    static async sendOtp(req: Request, res: Response) {
-        try {
-            const { phoneNumber } = req.body;
-            const result = await AuthService.sendOtp(phoneNumber);
-            res.status(200).json(result);
-        } catch (err: any) {
-            res.status(400).json({ message: err.message });
-        }
-    }
-
-    static async verifyOtp(req: Request, res: Response) {
-        try {
-            const { phoneNumber, otp } = req.body;
-            const tokens = await AuthService.verifyOtp(
-                phoneNumber,
-                otp,
-                req.headers["user-agent"],
-                req.ip
-            );
-            res.status(200).json(tokens);
-        } catch (err: any) {
-            res.status(400).json({ message: err.message });
         }
     }
 }
