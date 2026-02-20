@@ -13,6 +13,11 @@ router.get("/sessions", authenticate, AuthController.sessions);
 router.delete("/sessions/:id", authenticate, AuthController.revokeSession);
 router.delete("/sessions", authenticate, AuthController.revokeAllSessions);
 
+// 👇 TEST ROUTE
+router.get("/protected", (req, res) => {
+    res.json({ message: "Protected working" })
+})
+
 router.post("/send-otp", AuthController.sendOtp);
 router.post("/verify-otp", AuthController.verifyOtp);
 

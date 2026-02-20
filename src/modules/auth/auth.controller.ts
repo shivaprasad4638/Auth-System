@@ -34,7 +34,14 @@ export class AuthController {
                 req.ip
             );
 
-            res.status(200).json(tokens);
+            res.cookie("refreshToken", tokens.refreshToken, {
+                httpOnly: true,
+                secure: process.env.NODE_ENV === "production", // true in production
+                sameSite: "strict",
+                maxAge: 7 * 24 * 60 * 60 * 1000 // 7 days
+            });
+
+            res.status(200).json({ accessToken: tokens.accessToken });
         } catch (err: any) {
             res.status(400).json({ message: err.message });
         }
@@ -61,7 +68,14 @@ export class AuthController {
                 req.ip
             );
 
-            res.status(200).json(tokens);
+            res.cookie("refreshToken", tokens.refreshToken, {
+                httpOnly: true,
+                secure: process.env.NODE_ENV === "production",
+                sameSite: "strict",
+                maxAge: 7 * 24 * 60 * 60 * 1000
+            });
+
+            res.status(200).json({ accessToken: tokens.accessToken });
         } catch (err: any) {
             res.status(400).json({ message: err.message });
         }
@@ -69,11 +83,22 @@ export class AuthController {
 
     static async refresh(req: Request, res: Response) {
         try {
-            const { refreshToken } = req.body;
+            const refreshToken = req.cookies?.refreshToken || req.body.refreshToken;
+
+            if (!refreshToken) {
+                return res.status(401).json({ message: "Refresh token is missing" });
+            }
 
             const tokens = await AuthService.refresh(refreshToken);
 
-            res.status(200).json(tokens);
+            res.cookie("refreshToken", tokens.refreshToken, {
+                httpOnly: true,
+                secure: process.env.NODE_ENV === "production",
+                sameSite: "strict",
+                maxAge: 7 * 24 * 60 * 60 * 1000
+            });
+
+            res.status(200).json({ accessToken: tokens.accessToken });
         } catch (err: any) {
             res.status(401).json({ message: err.message });
         }
@@ -99,6 +124,12 @@ export class AuthController {
 
             await AuthService.logout(sessionId);
 
+            res.clearCookie("refreshToken", {
+                httpOnly: true,
+                secure: process.env.NODE_ENV === "production",
+                sameSite: "strict"
+            });
+
             res.status(200).json({ message: "Logged out successfully" });
         } catch (err: any) {
             res.status(500).json({ message: err.message });
@@ -114,7 +145,7 @@ export class AuthController {
     static async revokeSession(req: AuthRequest, res: Response) {
         try {
             if (!req.user) return res.status(401).json({ message: "Unauthorized" });
-            const sessionId = req.params.id;
+            const sessionId = req.params.id as string;
             // Pass both sessionId and userId to the service
             await AuthService.revokeSession(sessionId, req.user.sub);
             return res.json({ message: "Session revoked" });

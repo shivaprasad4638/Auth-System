@@ -3,7 +3,7 @@ import jwt from "jsonwebtoken";
 import prisma from "../../config/prisma";
 import { v4 as uuidv4 } from "uuid";
 
-const ACCESS_TOKEN_EXPIRES = "15m";
+const ACCESS_TOKEN_EXPIRES = "15s";
 const REFRESH_TOKEN_EXPIRES_DAYS = 7;
 
 export class AuthService {
@@ -175,7 +175,7 @@ export class AuthService {
         const accessToken = jwt.sign(
             { sub: user.id, sid: sessionId },
             process.env.ACCESS_TOKEN_SECRET!,
-            { expiresIn: "15m" }
+            { expiresIn: "10s" }
         );
 
         const tokenHash = await bcrypt.hash(refreshToken, 10);
