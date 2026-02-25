@@ -3,12 +3,23 @@ import jwt from "jsonwebtoken";
 import prisma from "../../config/prisma";
 import { v4 as uuidv4 } from "uuid";
 
-const ACCESS_TOKEN_EXPIRES = "15s";
+const ACCESS_TOKEN_EXPIRES = "15m";
 const REFRESH_TOKEN_EXPIRES_DAYS = 7;
 
 export class AuthService {
 
-    static async register(email: string, password: string, phoneNumber?: string) {
+    static async register(email: string, password: string, phoneNumber?: string, userAgent?: string, ip?: string) {
+        // Validate Email
+        const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+        if (!email.trim() || !emailRegex.test(email.trim())) {
+            throw new Error("Invalid email format");
+        }
+
+        // Validate Password (8+ characters, 1 uppercase, 1 number, 1 special character)
+        const passwordRegex = /^(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&])[A-Za-z\d@$!%*?&]{8,}$/;
+        if (!passwordRegex.test(password)) {
+            throw new Error("Password must be at least 8 characters long, contain 1 uppercase letter, 1 number, and 1 special character");
+        }
 
         const normalizedPhone = phoneNumber?.trim();
 
@@ -29,13 +40,42 @@ export class AuthService {
 
         const user = await prisma.user.create({
             data: {
-                email,
+                email: email.trim(),
                 passwordHash,
                 phoneNumber: normalizedPhone,
             },
         });
 
-        return user;
+        const sessionId = uuidv4();
+
+        const refreshToken = jwt.sign(
+            { sub: user.id, sid: sessionId },
+            process.env.REFRESH_TOKEN_SECRET!,
+            { expiresIn: `${REFRESH_TOKEN_EXPIRES_DAYS}d` }
+        );
+
+        const accessToken = jwt.sign(
+            { sub: user.id, sid: sessionId },
+            process.env.ACCESS_TOKEN_SECRET!,
+            { expiresIn: ACCESS_TOKEN_EXPIRES }
+        );
+
+        const tokenHash = await bcrypt.hash(refreshToken, 10);
+
+        await prisma.session.create({
+            data: {
+                id: sessionId,
+                userId: user.id,
+                tokenHash,
+                userAgent,
+                ip,
+                expiresAt: new Date(
+                    Date.now() + REFRESH_TOKEN_EXPIRES_DAYS * 24 * 60 * 60 * 1000
+                ),
+            },
+        });
+
+        return { user, accessToken, refreshToken };
     }
 
     static async login(email: string, password: string, userAgent?: string, ip?: string) {

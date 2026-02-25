@@ -8,14 +8,29 @@ export class AuthController {
         try {
             const { email, password, phoneNumber } = req.body;
 
-            const user = await AuthService.register(email, password, phoneNumber);
+            const { user, accessToken, refreshToken } = await AuthService.register(
+                email,
+                password,
+                phoneNumber,
+                (req.headers["user-agent"] as string) || undefined,
+                req.ip
+            );
+
+            res.cookie("refreshToken", refreshToken, {
+                httpOnly: true,
+                secure: process.env.NODE_ENV === "production",
+                sameSite: "strict",
+                maxAge: 7 * 24 * 60 * 60 * 1000 // 7 days
+            });
 
             res.status(201).json({
                 message: "User created",
+                accessToken,
                 user: {
                     id: user.id,
                     email: user.email,
-                    phoneNumber: user.phoneNumber
+                    phoneNumber: user.phoneNumber,
+                    isVerified: (user as any).isVerified
                 },
             });
         } catch (err: any) {
