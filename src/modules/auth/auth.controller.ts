@@ -30,7 +30,8 @@ export class AuthController {
                     id: user.id,
                     email: user.email,
                     phoneNumber: user.phoneNumber,
-                    isVerified: (user as any).isVerified
+                    isVerified: (user as any).isVerified,
+                    role: (user as any).role
                 },
             });
         } catch (err: any) {
@@ -56,7 +57,10 @@ export class AuthController {
                 maxAge: 7 * 24 * 60 * 60 * 1000 // 7 days
             });
 
-            res.status(200).json({ accessToken: tokens.accessToken });
+            res.status(200).json({
+                accessToken: tokens.accessToken,
+                user: tokens.user
+            });
         } catch (err: any) {
             res.status(400).json({ message: err.message });
         }
@@ -90,7 +94,10 @@ export class AuthController {
                 maxAge: 7 * 24 * 60 * 60 * 1000
             });
 
-            res.status(200).json({ accessToken: tokens.accessToken });
+            res.status(200).json({
+                accessToken: tokens.accessToken,
+                user: tokens.user
+            });
         } catch (err: any) {
             res.status(400).json({ message: err.message });
         }
@@ -113,7 +120,10 @@ export class AuthController {
                 maxAge: 7 * 24 * 60 * 60 * 1000
             });
 
-            res.status(200).json({ accessToken: tokens.accessToken });
+            res.status(200).json({
+                accessToken: tokens.accessToken,
+                user: tokens.user
+            });
         } catch (err: any) {
             res.status(401).json({ message: err.message });
         }

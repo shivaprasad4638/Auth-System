@@ -1,11 +1,13 @@
 import { Router } from "express";
 import { AuthController } from "./auth.controller";
 import { authenticate } from "../../middleware/auth.middleware";
+import { authorize } from "../../middleware/rbac.middleware";
+import { loginRateLimiter } from "../../middleware/rateLimit.middleware";
 
 const router = Router();
 
 router.post("/register", AuthController.register);
-router.post("/login", AuthController.login);
+router.post("/login", loginRateLimiter, AuthController.login);
 router.post("/refresh", AuthController.refresh);
 router.post("/logout", authenticate, AuthController.logout);
 
@@ -17,6 +19,14 @@ router.delete("/sessions", authenticate, AuthController.revokeAllSessions);
 router.get("/protected", (req, res) => {
     res.json({ message: "Protected working" })
 })
+
+router.get("/profile", authenticate, (req, res) => {
+    res.json({ message: "Profile access granted", user: (req as any).user });
+});
+
+router.get("/admin/dashboard", authenticate, authorize(["admin"]), (req, res) => {
+    res.json({ message: "Admin Dashboard access granted", user: (req as any).user });
+});
 
 router.post("/send-otp", AuthController.sendOtp);
 router.post("/verify-otp", AuthController.verifyOtp);

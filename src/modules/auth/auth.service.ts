@@ -49,13 +49,13 @@ export class AuthService {
         const sessionId = uuidv4();
 
         const refreshToken = jwt.sign(
-            { sub: user.id, sid: sessionId },
+            { sub: user.id, sid: sessionId, role: (user as any).role, email: user.email },
             process.env.REFRESH_TOKEN_SECRET!,
             { expiresIn: `${REFRESH_TOKEN_EXPIRES_DAYS}d` }
         );
 
         const accessToken = jwt.sign(
-            { sub: user.id, sid: sessionId },
+            { sub: user.id, sid: sessionId, role: (user as any).role, email: user.email },
             process.env.ACCESS_TOKEN_SECRET!,
             { expiresIn: ACCESS_TOKEN_EXPIRES }
         );
@@ -86,38 +86,46 @@ export class AuthService {
         if (!user) throw new Error("Invalid credentials");
 
         if (user.lockedUntil && user.lockedUntil > new Date()) {
-            throw new Error("Account temporarily locked");
+            throw new Error("Account temporarily locked due to too many failed attempts.");
         }
 
         const validPassword = await bcrypt.compare(password, user.passwordHash || "");
 
         if (!validPassword) {
+            const nextFailedAttempts = user.failedAttempts + 1;
+            const lockedUntil = nextFailedAttempts >= 5 ? new Date(Date.now() + 15 * 60 * 1000) : null;
+
             await prisma.user.update({
                 where: { id: user.id },
                 data: {
-                    failedAttempts: { increment: 1 },
+                    failedAttempts: nextFailedAttempts,
+                    lockedUntil: lockedUntil
                 },
             });
 
-            throw new Error("Invalid credentials");
+            if (lockedUntil) {
+                throw new Error("Account temporarily locked due to too many failed attempts.");
+            } else {
+                throw new Error("Invalid credentials");
+            }
         }
 
         // reset failed attempts
         await prisma.user.update({
             where: { id: user.id },
-            data: { failedAttempts: 0 },
+            data: { failedAttempts: 0, lockedUntil: null },
         });
 
         const sessionId = uuidv4();
 
         const refreshToken = jwt.sign(
-            { sub: user.id, sid: sessionId },
+            { sub: user.id, sid: sessionId, role: (user as any).role, email: user.email },
             process.env.REFRESH_TOKEN_SECRET!,
             { expiresIn: `${REFRESH_TOKEN_EXPIRES_DAYS}d` }
         );
 
         const accessToken = jwt.sign(
-            { sub: user.id, sid: sessionId },
+            { sub: user.id, sid: sessionId, role: (user as any).role, email: user.email },
             process.env.ACCESS_TOKEN_SECRET!,
             { expiresIn: ACCESS_TOKEN_EXPIRES }
         );
@@ -137,7 +145,11 @@ export class AuthService {
             },
         });
 
-        return { accessToken, refreshToken };
+        return {
+            accessToken,
+            refreshToken,
+            user: { id: user.id, email: user.email, role: (user as any).role }
+        };
     }
 
     static async sendOtp(phoneNumber: string) {
@@ -207,15 +219,15 @@ export class AuthService {
         const sessionId = uuidv4();
 
         const refreshToken = jwt.sign(
-            { sub: user.id, sid: sessionId },
+            { sub: user.id, sid: sessionId, role: (user as any).role, email: user.email },
             process.env.REFRESH_TOKEN_SECRET!,
-            { expiresIn: "7d" }
+            { expiresIn: `${REFRESH_TOKEN_EXPIRES_DAYS}d` }
         );
 
         const accessToken = jwt.sign(
-            { sub: user.id, sid: sessionId },
+            { sub: user.id, sid: sessionId, role: (user as any).role, email: user.email },
             process.env.ACCESS_TOKEN_SECRET!,
-            { expiresIn: "10s" }
+            { expiresIn: ACCESS_TOKEN_EXPIRES }
         );
 
         const tokenHash = await bcrypt.hash(refreshToken, 10);
@@ -231,7 +243,11 @@ export class AuthService {
             },
         });
 
-        return { accessToken, refreshToken };
+        return {
+            accessToken,
+            refreshToken,
+            user: { id: user.id, email: user.email, role: (user as any).role }
+        };
     }
 
     static async refresh(refreshToken: string) {
@@ -276,13 +292,13 @@ export class AuthService {
         // Generate new tokens
         // payload.sub is usually the userId string
         const newRefreshToken = jwt.sign(
-            { sub: payload.sub, sid: newSessionId },
+            { sub: payload.sub, sid: newSessionId, role: payload.role, email: payload.email },
             process.env.REFRESH_TOKEN_SECRET!,
             { expiresIn: `${REFRESH_TOKEN_EXPIRES_DAYS}d` }
         );
 
         const newAccessToken = jwt.sign(
-            { sub: payload.sub, sid: newSessionId },
+            { sub: payload.sub, sid: newSessionId, role: payload.role, email: payload.email },
             process.env.ACCESS_TOKEN_SECRET!,
             { expiresIn: ACCESS_TOKEN_EXPIRES }
         );
@@ -303,7 +319,11 @@ export class AuthService {
             },
         });
 
-        return { accessToken: newAccessToken, refreshToken: newRefreshToken };
+        return {
+            accessToken: newAccessToken,
+            refreshToken: newRefreshToken,
+            user: { id: payload.sub, email: payload.email, role: payload.role }
+        };
     }
 
     static async getSessions(userId: string) {
