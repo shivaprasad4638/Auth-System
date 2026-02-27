@@ -1,195 +1,156 @@
 import { Request, Response } from "express";
 import { AuthService } from "./auth.service";
 import { AuthRequest } from "../../middleware/auth.middleware";
+import { catchAsync } from "../../utils/catchAsync";
+import { AppError } from "../../utils/AppError";
 
 export class AuthController {
+    static register = catchAsync(async (req: Request, res: Response) => {
+        const { email, password, phoneNumber } = req.body;
 
-    static async register(req: Request, res: Response) {
-        try {
-            const { email, password, phoneNumber } = req.body;
+        const { user, accessToken, refreshToken } = await AuthService.register(
+            email,
+            password,
+            phoneNumber,
+            (req.headers["user-agent"] as string) || undefined,
+            req.ip
+        );
 
-            const { user, accessToken, refreshToken } = await AuthService.register(
-                email,
-                password,
-                phoneNumber,
-                (req.headers["user-agent"] as string) || undefined,
-                req.ip
-            );
+        res.cookie("refreshToken", refreshToken, {
+            httpOnly: true,
+            secure: process.env.NODE_ENV === "production",
+            sameSite: "strict",
+            maxAge: 7 * 24 * 60 * 60 * 1000 // 7 days
+        });
 
-            res.cookie("refreshToken", refreshToken, {
-                httpOnly: true,
-                secure: process.env.NODE_ENV === "production",
-                sameSite: "strict",
-                maxAge: 7 * 24 * 60 * 60 * 1000 // 7 days
-            });
+        res.status(201).json({
+            message: "User created",
+            accessToken,
+            user: {
+                id: user.id,
+                email: user.email,
+                phoneNumber: user.phoneNumber,
+                isVerified: (user as any).isVerified,
+                role: (user as any).role
+            },
+        });
+    });
 
-            res.status(201).json({
-                message: "User created",
-                accessToken,
-                user: {
-                    id: user.id,
-                    email: user.email,
-                    phoneNumber: user.phoneNumber,
-                    isVerified: (user as any).isVerified,
-                    role: (user as any).role
-                },
-            });
-        } catch (err: any) {
-            res.status(400).json({ message: err.message });
+    static login = catchAsync(async (req: Request, res: Response) => {
+        const { email, password } = req.body;
+
+        const tokens = await AuthService.login(
+            email,
+            password,
+            (req.headers["user-agent"] as string) || undefined,
+            req.ip
+        );
+
+        res.cookie("refreshToken", tokens.refreshToken, {
+            httpOnly: true,
+            secure: process.env.NODE_ENV === "production",
+            sameSite: "strict",
+            maxAge: 7 * 24 * 60 * 60 * 1000 // 7 days
+        });
+
+        res.status(200).json({
+            accessToken: tokens.accessToken,
+            user: tokens.user
+        });
+    });
+
+    static sendOtp = catchAsync(async (req: Request, res: Response) => {
+        const { phoneNumber } = req.body;
+        const result = await AuthService.sendOtp(phoneNumber);
+        res.status(200).json(result);
+    });
+
+    static verifyOtp = catchAsync(async (req: Request, res: Response) => {
+        const { phoneNumber, otp } = req.body;
+
+        const tokens = await AuthService.verifyOtp(
+            phoneNumber,
+            otp,
+            (req.headers["user-agent"] as string) || undefined,
+            req.ip
+        );
+
+        res.cookie("refreshToken", tokens.refreshToken, {
+            httpOnly: true,
+            secure: process.env.NODE_ENV === "production",
+            sameSite: "strict",
+            maxAge: 7 * 24 * 60 * 60 * 1000
+        });
+
+        res.status(200).json({
+            accessToken: tokens.accessToken,
+            user: tokens.user
+        });
+    });
+
+    static refresh = catchAsync(async (req: Request, res: Response) => {
+        const refreshToken = req.cookies?.refreshToken || req.body.refreshToken;
+
+        if (!refreshToken) {
+            throw new AppError("Refresh token is missing", 401);
         }
-    }
 
-    static async login(req: Request, res: Response) {
-        try {
-            const { email, password } = req.body;
+        const tokens = await AuthService.refresh(refreshToken);
 
-            const tokens = await AuthService.login(
-                email,
-                password,
-                (req.headers["user-agent"] as string) || undefined,
-                req.ip
-            );
+        res.cookie("refreshToken", tokens.refreshToken, {
+            httpOnly: true,
+            secure: process.env.NODE_ENV === "production",
+            sameSite: "strict",
+            maxAge: 7 * 24 * 60 * 60 * 1000
+        });
 
-            res.cookie("refreshToken", tokens.refreshToken, {
-                httpOnly: true,
-                secure: process.env.NODE_ENV === "production", // true in production
-                sameSite: "strict",
-                maxAge: 7 * 24 * 60 * 60 * 1000 // 7 days
-            });
+        res.status(200).json({
+            accessToken: tokens.accessToken,
+            user: tokens.user
+        });
+    });
 
-            res.status(200).json({
-                accessToken: tokens.accessToken,
-                user: tokens.user
-            });
-        } catch (err: any) {
-            res.status(400).json({ message: err.message });
-        }
-    }
+    static getSessions = catchAsync(async (req: AuthRequest, res: Response) => {
+        if (!req.user) throw new AppError("Unauthorized", 401);
 
-    static async sendOtp(req: Request, res: Response) {
-        try {
-            const { phoneNumber } = req.body;
-            const result = await AuthService.sendOtp(phoneNumber);
-            res.status(200).json(result);
-        } catch (err: any) {
-            res.status(400).json({ message: err.message });
-        }
-    }
+        const sessions = await AuthService.getSessions(req.user.sub);
 
-    static async verifyOtp(req: Request, res: Response) {
-        try {
-            const { phoneNumber, otp } = req.body;
+        res.status(200).json(sessions);
+    });
 
-            const tokens = await AuthService.verifyOtp(
-                phoneNumber,
-                otp,
-                (req.headers["user-agent"] as string) || undefined,
-                req.ip
-            );
+    static logout = catchAsync(async (req: AuthRequest, res: Response) => {
+        if (!req.user) throw new AppError("Unauthorized", 401);
 
-            res.cookie("refreshToken", tokens.refreshToken, {
-                httpOnly: true,
-                secure: process.env.NODE_ENV === "production",
-                sameSite: "strict",
-                maxAge: 7 * 24 * 60 * 60 * 1000
-            });
+        const sessionId = req.body.sessionId || req.user.sid;
 
-            res.status(200).json({
-                accessToken: tokens.accessToken,
-                user: tokens.user
-            });
-        } catch (err: any) {
-            res.status(400).json({ message: err.message });
-        }
-    }
+        await AuthService.logout(sessionId);
 
-    static async refresh(req: Request, res: Response) {
-        try {
-            const refreshToken = req.cookies?.refreshToken || req.body.refreshToken;
+        res.clearCookie("refreshToken", {
+            httpOnly: true,
+            secure: process.env.NODE_ENV === "production",
+            sameSite: "strict"
+        });
 
-            if (!refreshToken) {
-                return res.status(401).json({ message: "Refresh token is missing" });
-            }
-
-            const tokens = await AuthService.refresh(refreshToken);
-
-            res.cookie("refreshToken", tokens.refreshToken, {
-                httpOnly: true,
-                secure: process.env.NODE_ENV === "production",
-                sameSite: "strict",
-                maxAge: 7 * 24 * 60 * 60 * 1000
-            });
-
-            res.status(200).json({
-                accessToken: tokens.accessToken,
-                user: tokens.user
-            });
-        } catch (err: any) {
-            res.status(401).json({ message: err.message });
-        }
-    }
-
-    static async getSessions(req: AuthRequest, res: Response) {
-        try {
-            if (!req.user) return res.status(401).json({ message: "Unauthorized" });
-
-            const sessions = await AuthService.getSessions(req.user.sub);
-
-            res.status(200).json(sessions);
-        } catch (err: any) {
-            res.status(500).json({ message: err.message });
-        }
-    }
-
-    static async logout(req: AuthRequest, res: Response) {
-        try {
-            if (!req.user) return res.status(401).json({ message: "Unauthorized" });
-
-            const sessionId = req.body.sessionId || req.user.sid;
-
-            await AuthService.logout(sessionId);
-
-            res.clearCookie("refreshToken", {
-                httpOnly: true,
-                secure: process.env.NODE_ENV === "production",
-                sameSite: "strict"
-            });
-
-            res.status(200).json({ message: "Logged out successfully" });
-        } catch (err: any) {
-            res.status(500).json({ message: err.message });
-        }
-    }
+        res.status(200).json({ message: "Logged out successfully" });
+    });
 
     // Alias for getSessions to match user request
-    static async sessions(req: AuthRequest, res: Response) {
-        return AuthController.getSessions(req, res);
-    }
+    static sessions = AuthController.getSessions;
 
+    static revokeSession = catchAsync(async (req: AuthRequest, res: Response) => {
+        if (!req.user) throw new AppError("Unauthorized", 401);
+        const sessionId = req.params.id as string;
+        // Pass both sessionId and userId to the service
+        await AuthService.revokeSession(sessionId, req.user.sub);
+        res.json({ message: "Session revoked" });
+    });
 
-    static async revokeSession(req: AuthRequest, res: Response) {
-        try {
-            if (!req.user) return res.status(401).json({ message: "Unauthorized" });
-            const sessionId = req.params.id as string;
-            // Pass both sessionId and userId to the service
-            await AuthService.revokeSession(sessionId, req.user.sub);
-            return res.json({ message: "Session revoked" });
-        } catch (error: any) {
-            return res.status(400).json({ message: error.message });
-        }
-    }
+    static revokeAllSessions = catchAsync(async (req: AuthRequest, res: Response) => {
+        if (!req.user) throw new AppError("Unauthorized", 401);
+        const userId = req.user.sub;
 
-    static async revokeAllSessions(req: AuthRequest, res: Response) {
-        try {
-            // Fix: req.user is possibly undefined, so check it (already checked in middleware but good specifically for TS)
-            if (!req.user) return res.status(401).json({ message: "Unauthorized" });
-            const userId = req.user.sub;
+        await AuthService.revokeAllSessions(userId);
 
-            await AuthService.revokeAllSessions(userId);
-
-            return res.json({ message: "All sessions revoked" });
-        } catch (error: any) {
-            return res.status(400).json({ message: error.message });
-        }
-    }
+        res.json({ message: "All sessions revoked" });
+    });
 }

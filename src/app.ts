@@ -2,6 +2,7 @@ import express, { Request, Response, NextFunction } from "express"
 import cors from "cors"
 import cookieParser from "cookie-parser"
 import authRoutes from "./modules/auth/auth.routes"
+import { globalErrorHandler } from "./middleware/errorHandler.middleware"
 
 const app = express()
 
@@ -15,5 +16,7 @@ app.use(cookieParser())
 
 // Modular auth routes definition
 app.use("/api/auth", authRoutes)
+
+app.use(globalErrorHandler as express.ErrorRequestHandler)
 
 export default app

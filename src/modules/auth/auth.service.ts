@@ -2,6 +2,7 @@ import bcrypt from "bcrypt";
 import jwt from "jsonwebtoken";
 import prisma from "../../config/prisma";
 import { v4 as uuidv4 } from "uuid";
+import { AppError } from "../../utils/AppError";
 
 const ACCESS_TOKEN_EXPIRES = "15m";
 const REFRESH_TOKEN_EXPIRES_DAYS = 7;
@@ -12,13 +13,13 @@ export class AuthService {
         // Validate Email
         const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
         if (!email.trim() || !emailRegex.test(email.trim())) {
-            throw new Error("Invalid email format");
+            throw new AppError("Invalid email format", 400);
         }
 
         // Validate Password (8+ characters, 1 uppercase, 1 number, 1 special character)
         const passwordRegex = /^(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&])[A-Za-z\d@$!%*?&]{8,}$/;
         if (!passwordRegex.test(password)) {
-            throw new Error("Password must be at least 8 characters long, contain 1 uppercase letter, 1 number, and 1 special character");
+            throw new AppError("Password must be at least 8 characters long, contain 1 uppercase letter, 1 number, and 1 special character", 400);
         }
 
         const normalizedPhone = phoneNumber?.trim();
@@ -33,7 +34,7 @@ export class AuthService {
         });
 
         if (existingUser) {
-            throw new Error("User already exists");
+            throw new AppError("User already exists", 409);
         }
 
         const passwordHash = await bcrypt.hash(password, 12);
@@ -83,10 +84,10 @@ export class AuthService {
             where: { email },
         });
 
-        if (!user) throw new Error("Invalid credentials");
+        if (!user) throw new AppError("Invalid credentials", 401);
 
         if (user.lockedUntil && user.lockedUntil > new Date()) {
-            throw new Error("Account temporarily locked due to too many failed attempts.");
+            throw new AppError("Account temporarily locked due to too many failed attempts.", 403);
         }
 
         const validPassword = await bcrypt.compare(password, user.passwordHash || "");
@@ -104,9 +105,9 @@ export class AuthService {
             });
 
             if (lockedUntil) {
-                throw new Error("Account temporarily locked due to too many failed attempts.");
+                throw new AppError("Account temporarily locked due to too many failed attempts.", 403);
             } else {
-                throw new Error("Invalid credentials");
+                throw new AppError("Invalid credentials", 401);
             }
         }
 
@@ -164,7 +165,7 @@ export class AuthService {
         console.log("User found:", user);
 
         if (!user) {
-            throw new Error("User not found");
+            throw new AppError("User not found", 404);
         }
 
         const otp = Math.floor(100000 + Math.random() * 900000).toString();
@@ -197,15 +198,15 @@ export class AuthService {
         });
 
         if (!user || !user.otp || !user.otpExpiresAt) {
-            throw new Error("Invalid OTP");
+            throw new AppError("Invalid OTP", 401);
         }
 
         if (new Date() > user.otpExpiresAt) {
-            throw new Error("OTP expired");
+            throw new AppError("OTP expired", 401);
         }
 
         if (user.otp !== otp) {
-            throw new Error("Invalid OTP");
+            throw new AppError("Invalid OTP", 401);
         }
 
         await prisma.user.update({
@@ -255,7 +256,7 @@ export class AuthService {
         try {
             payload = jwt.verify(refreshToken, process.env.REFRESH_TOKEN_SECRET!);
         } catch (error) {
-            throw new Error("Invalid refresh token");
+            throw new AppError("Invalid refresh token", 401);
         }
 
         const session = await prisma.session.findUnique({
@@ -263,11 +264,11 @@ export class AuthService {
         });
 
         if (!session) {
-            throw new Error("Invalid session");
+            throw new AppError("Invalid session", 401);
         }
 
         if (session.revokedAt) {
-            throw new Error("Session revoked");
+            throw new AppError("Session revoked", 401);
         }
 
         const tokenValid = await bcrypt.compare(refreshToken, session.tokenHash);
@@ -277,7 +278,7 @@ export class AuthService {
                 where: { id: session.id },
                 data: { revokedAt: new Date() }
             });
-            throw new Error("Invalid refresh token");
+            throw new AppError("Invalid refresh token", 401);
         }
 
         // Revoke old session
@@ -349,7 +350,7 @@ export class AuthService {
         });
 
         if (!session || session.userId !== userId) {
-            throw new Error("Session not found or unauthorized");
+            throw new AppError("Session not found or unauthorized", 404);
         }
 
         await prisma.session.update({
@@ -376,4 +377,3 @@ export class AuthService {
         });
     }
 }
-
