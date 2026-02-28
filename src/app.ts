@@ -14,7 +14,9 @@ app.use(cors({
 app.use(express.json())
 app.use(cookieParser())
 
-// Modular auth routes definition
+// Modular route definition
+import userRoutes from "./modules/user/user.routes"
+app.use("/api/users", userRoutes)
 app.use("/api/auth", authRoutes)
 
 app.use(globalErrorHandler as express.ErrorRequestHandler)

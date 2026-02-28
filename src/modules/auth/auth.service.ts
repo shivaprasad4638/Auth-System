@@ -44,6 +44,7 @@ export class AuthService {
                 email: email.trim(),
                 passwordHash,
                 phoneNumber: normalizedPhone,
+                avatarSeed: email.trim(),
             },
         });
 
@@ -149,7 +150,7 @@ export class AuthService {
         return {
             accessToken,
             refreshToken,
-            user: { id: user.id, email: user.email, role: (user as any).role }
+            user: { id: user.id, email: user.email, role: (user as any).role, avatarSeed: (user as any).avatarSeed || user.email, avatarStyle: (user as any).avatarStyle }
         };
     }
 
@@ -247,7 +248,7 @@ export class AuthService {
         return {
             accessToken,
             refreshToken,
-            user: { id: user.id, email: user.email, role: (user as any).role }
+            user: { id: user.id, email: user.email, role: (user as any).role, avatarSeed: (user as any).avatarSeed || user.email, avatarStyle: (user as any).avatarStyle }
         };
     }
 
@@ -261,6 +262,7 @@ export class AuthService {
 
         const session = await prisma.session.findUnique({
             where: { id: payload.sid },
+            include: { user: true }
         });
 
         if (!session) {
@@ -268,7 +270,14 @@ export class AuthService {
         }
 
         if (session.revokedAt) {
-            throw new AppError("Session revoked", 401);
+            // SECURITY WARNING: Token Reuse Detected!
+            // This indicates a stolen refresh token is being used.
+            // We must instantly revoke ALL active sessions for this user (Token Family Revocation).
+            await prisma.session.updateMany({
+                where: { userId: session.userId, revokedAt: null },
+                data: { revokedAt: new Date() }
+            });
+            throw new AppError("Session revoked due to token reuse detection.", 401);
         }
 
         const tokenValid = await bcrypt.compare(refreshToken, session.tokenHash);
@@ -323,7 +332,7 @@ export class AuthService {
         return {
             accessToken: newAccessToken,
             refreshToken: newRefreshToken,
-            user: { id: payload.sub, email: payload.email, role: payload.role }
+            user: { id: payload.sub, email: payload.email, role: payload.role, avatarSeed: session.user?.avatarSeed || payload.email, avatarStyle: (session.user as any)?.avatarStyle }
         };
     }
 

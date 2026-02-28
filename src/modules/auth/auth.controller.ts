@@ -19,7 +19,7 @@ export class AuthController {
         res.cookie("refreshToken", refreshToken, {
             httpOnly: true,
             secure: process.env.NODE_ENV === "production",
-            sameSite: "strict",
+            sameSite: "lax",
             maxAge: 7 * 24 * 60 * 60 * 1000 // 7 days
         });
 
@@ -31,7 +31,9 @@ export class AuthController {
                 email: user.email,
                 phoneNumber: user.phoneNumber,
                 isVerified: (user as any).isVerified,
-                role: (user as any).role
+                role: (user as any).role,
+                avatarSeed: (user as any).avatarSeed || user.email,
+                avatarStyle: (user as any).avatarStyle
             },
         });
     });
@@ -49,7 +51,7 @@ export class AuthController {
         res.cookie("refreshToken", tokens.refreshToken, {
             httpOnly: true,
             secure: process.env.NODE_ENV === "production",
-            sameSite: "strict",
+            sameSite: "lax",
             maxAge: 7 * 24 * 60 * 60 * 1000 // 7 days
         });
 
@@ -78,7 +80,7 @@ export class AuthController {
         res.cookie("refreshToken", tokens.refreshToken, {
             httpOnly: true,
             secure: process.env.NODE_ENV === "production",
-            sameSite: "strict",
+            sameSite: "lax",
             maxAge: 7 * 24 * 60 * 60 * 1000
         });
 
@@ -100,7 +102,7 @@ export class AuthController {
         res.cookie("refreshToken", tokens.refreshToken, {
             httpOnly: true,
             secure: process.env.NODE_ENV === "production",
-            sameSite: "strict",
+            sameSite: "lax",
             maxAge: 7 * 24 * 60 * 60 * 1000
         });
 
@@ -128,7 +130,7 @@ export class AuthController {
         res.clearCookie("refreshToken", {
             httpOnly: true,
             secure: process.env.NODE_ENV === "production",
-            sameSite: "strict"
+            sameSite: "lax"
         });
 
         res.status(200).json({ message: "Logged out successfully" });

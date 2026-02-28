@@ -6,7 +6,6 @@ console.log("DATABASE_URL defined:", !!process.env.DATABASE_URL);
 if (process.env.DATABASE_URL) {
     console.log("DATABASE_URL host:", process.env.DATABASE_URL.split('@')[1]); // Log safe part of URL
 }
-
 const prismaClientSingleton = () => {
     return new PrismaClient({
         log: ['query', 'info', 'warn', 'error'],
