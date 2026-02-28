@@ -13,6 +13,7 @@ model User {
   id             String    @id @default(uuid())
   email          String    @unique
   passwordHash   String?
+  role           String    @default("user")
   failedAttempts Int       @default(0)
   avatarSeed     String?
   avatarStyle    String?   @default("avataaars")

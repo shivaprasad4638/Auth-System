@@ -162,8 +162,7 @@ export class AuthService {
             where: { phoneNumber: normalizedPhone },
         });
 
-        console.log("Searching for phone:", normalizedPhone);
-        console.log("User found:", user);
+
 
         if (!user) {
             throw new AppError("User not found", 404);
@@ -180,7 +179,8 @@ export class AuthService {
             },
         });
 
-        console.log(`OTP for ${normalizedPhone}: ${otp}`);
+        // In production, send OTP via SMS provider (Twilio, etc.)
+        // Never log OTP codes
 
         return { message: "OTP sent successfully" };
     }
