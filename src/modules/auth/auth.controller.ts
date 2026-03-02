@@ -182,4 +182,24 @@ export class AuthController {
 
         res.json({ message: "All sessions revoked" });
     });
+
+    static enable2fa = catchAsync(async (req: AuthRequest, res: Response) => {
+        if (!req.user) throw new AppError("Unauthorized", 401);
+        const result = await AuthService.enable2fa(req.user.sub);
+        res.status(200).json(result);
+    });
+
+    static confirm2fa = catchAsync(async (req: AuthRequest, res: Response) => {
+        if (!req.user) throw new AppError("Unauthorized", 401);
+        const { code } = req.body;
+        if (!code) throw new AppError("Verification code is required", 400);
+        const result = await AuthService.confirm2fa(req.user.sub, code);
+        res.status(200).json(result);
+    });
+
+    static disable2fa = catchAsync(async (req: AuthRequest, res: Response) => {
+        if (!req.user) throw new AppError("Unauthorized", 401);
+        const result = await AuthService.disable2fa(req.user.sub);
+        res.status(200).json(result);
+    });
 }

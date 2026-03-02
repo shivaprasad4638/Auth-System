@@ -19,4 +19,9 @@ router.delete("/sessions", authenticate, AuthController.revokeAllSessions);
 router.post("/send-otp", AuthController.sendOtp);
 router.post("/verify-otp", AuthController.verifyOtp);
 
+// 2FA setup routes (require authentication)
+router.post("/2fa/enable", authenticate, AuthController.enable2fa);
+router.post("/2fa/confirm", authenticate, AuthController.confirm2fa);
+router.delete("/2fa/disable", authenticate, AuthController.disable2fa);
+
 export default router;

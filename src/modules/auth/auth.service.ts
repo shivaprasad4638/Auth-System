@@ -4,7 +4,9 @@ import prisma from "../../config/prisma";
 import { v4 as uuidv4 } from "uuid";
 import { AppError } from "../../utils/AppError";
 import speakeasy from "speakeasy";
-import { decrypt } from "../../utils/crypto.utils";
+// eslint-disable-next-line @typescript-eslint/no-require-imports
+const qrcode = require("qrcode");
+import { encrypt, decrypt } from "../../utils/crypto.utils";
 
 const ACCESS_TOKEN_EXPIRES = "15m";
 const REFRESH_TOKEN_EXPIRES_DAYS = 7;
@@ -464,5 +466,75 @@ export class AuthService {
             where: { id: sessionId },
             data: { revokedAt: new Date() },
         });
+    }
+
+    /**
+     * Step 1: Generate a TOTP secret, save it encrypted (but NOT enabled yet),
+     * and return a QR code for the user to scan with Google Authenticator.
+     */
+    static async enable2fa(userId: string) {
+        const user = await prisma.user.findUnique({ where: { id: userId } });
+        if (!user) throw new AppError("User not found", 404);
+
+        const secret = speakeasy.generateSecret({
+            length: 20,
+            name: `SecureAuth (${user.email})`
+        });
+
+        const encryptedSecret = encrypt(secret.base32);
+
+        // Store the secret but do NOT enable 2FA yet
+        await prisma.user.update({
+            where: { id: userId },
+            data: {
+                twoFactorSecret: encryptedSecret,
+                twoFactorEnabled: false
+            } as any
+        });
+
+        const qrCodeUrl = await qrcode.toDataURL(secret.otpauth_url!);
+
+        return { qrCode: qrCodeUrl };
+    }
+
+    /**
+     * Step 2: User scanned QR and entered 6-digit code.
+     * Verify it's correct, then set twoFactorEnabled = true.
+     */
+    static async confirm2fa(userId: string, code: string) {
+        const user = await prisma.user.findUnique({ where: { id: userId } });
+        if (!user) throw new AppError("User not found", 404);
+
+        const secret = (user as any).twoFactorSecret;
+        if (!secret) throw new AppError("2FA setup not started. Please generate a QR code first.", 400);
+
+        const decryptedSecret = decrypt(secret);
+
+        const isValid = speakeasy.totp.verify({
+            secret: decryptedSecret,
+            encoding: "base32",
+            token: code,
+            window: 1
+        });
+
+        if (!isValid) throw new AppError("Invalid 2FA code. Please try again.", 400);
+
+        await prisma.user.update({
+            where: { id: userId },
+            data: { twoFactorEnabled: true } as any
+        });
+
+        return { message: "2FA successfully enabled" };
+    }
+
+    /**
+     * Disable 2FA for the user.
+     */
+    static async disable2fa(userId: string) {
+        await prisma.user.update({
+            where: { id: userId },
+            data: { twoFactorEnabled: false, twoFactorSecret: null } as any
+        });
+        return { message: "2FA disabled" };
     }
 }
