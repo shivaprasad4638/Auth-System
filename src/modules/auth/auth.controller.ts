@@ -142,7 +142,7 @@ export class AuthController {
     static getSessions = catchAsync(async (req: AuthRequest, res: Response) => {
         if (!req.user) throw new AppError("Unauthorized", 401);
 
-        const sessions = await AuthService.getSessions(req.user.sub);
+        const sessions = await AuthService.getSessions(req.user.sub, req.user.sid);
 
         res.status(200).json(sessions);
     });

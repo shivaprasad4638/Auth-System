@@ -418,7 +418,7 @@ export class AuthService {
         };
     }
 
-    static async getSessions(userId: string) {
+    static async getSessions(userId: string, currentSessionId?: string) {
         const sessions = await prisma.session.findMany({
             where: { userId },
             orderBy: { createdAt: "desc" },
@@ -431,7 +431,7 @@ export class AuthService {
             createdAt: session.createdAt,
             expiresAt: session.expiresAt,
             revokedAt: session.revokedAt,
-            isCurrent: false, // Controller can determine this if needed, or pass current sessionId here
+            isCurrent: session.id === currentSessionId,
         }));
     }
 
