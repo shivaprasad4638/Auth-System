@@ -24,6 +24,8 @@ model User {
   otpExpiresAt   DateTime?
   phoneNumber    String?   @unique
   isVerified     Boolean   @default(false)
+  twoFactorEnabled Boolean @default(false)
+  twoFactorSecret  String?
   sessions       Session[]
 
   @@schema("public")

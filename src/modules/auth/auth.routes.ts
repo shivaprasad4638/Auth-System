@@ -2,12 +2,13 @@ import { Router } from "express";
 import { AuthController } from "./auth.controller";
 import { authenticate } from "../../middleware/auth.middleware";
 import { authorize } from "../../middleware/rbac.middleware";
-import { loginRateLimiter } from "../../middleware/rateLimit.middleware";
+import { loginRateLimiter, twoFaRateLimiter } from "../../middleware/rateLimit.middleware";
 
 const router = Router();
 
 router.post("/register", AuthController.register);
 router.post("/login", loginRateLimiter, AuthController.login);
+router.post("/2fa/login", twoFaRateLimiter, AuthController.verify2faLogin);
 router.post("/refresh", AuthController.refresh);
 router.post("/logout", authenticate, AuthController.logout);
 

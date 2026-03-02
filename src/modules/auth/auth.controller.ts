@@ -41,14 +41,18 @@ export class AuthController {
     static login = catchAsync(async (req: Request, res: Response) => {
         const { email, password } = req.body;
 
-        const tokens = await AuthService.login(
+        const response = await AuthService.login(
             email,
             password,
             (req.headers["user-agent"] as string) || undefined,
             req.ip
         );
 
-        res.cookie("refreshToken", tokens.refreshToken, {
+        if ("twoFactorRequired" in response) {
+            return res.status(200).json(response);
+        }
+
+        res.cookie("refreshToken", response.refreshToken, {
             httpOnly: true,
             secure: process.env.NODE_ENV === "production",
             sameSite: process.env.NODE_ENV === "production" ? "none" : "lax",
@@ -56,8 +60,31 @@ export class AuthController {
         });
 
         res.status(200).json({
-            accessToken: tokens.accessToken,
-            user: tokens.user
+            accessToken: response.accessToken,
+            user: response.user
+        });
+    });
+
+    static verify2faLogin = catchAsync(async (req: Request, res: Response) => {
+        const { tempToken, code } = req.body;
+
+        const response = await AuthService.verify2faLogin(
+            tempToken,
+            code,
+            (req.headers["user-agent"] as string) || undefined,
+            req.ip
+        );
+
+        res.cookie("refreshToken", response.refreshToken, {
+            httpOnly: true,
+            secure: process.env.NODE_ENV === "production",
+            sameSite: process.env.NODE_ENV === "production" ? "none" : "lax",
+            maxAge: 7 * 24 * 60 * 60 * 1000 // 7 days
+        });
+
+        res.status(200).json({
+            accessToken: response.accessToken,
+            user: response.user
         });
     });
 

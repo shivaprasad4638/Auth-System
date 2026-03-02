@@ -14,9 +14,21 @@ app.set("trust proxy", 1)
 // Security headers
 app.use(helmet())
 
-// Configure CORS — use CORS_ORIGIN env var in production
+// Configure CORS — allow both production frontend and local dev
+const allowedOrigins = [
+    process.env.CORS_ORIGIN,
+    "http://localhost:5173",
+    "http://localhost:3000"
+].filter(Boolean);
+
 app.use(cors({
-    origin: process.env.CORS_ORIGIN || "http://localhost:5173",
+    origin: function (origin, callback) {
+        if (!origin || allowedOrigins.includes(origin)) {
+            callback(null, true);
+        } else {
+            callback(new Error('Not allowed by CORS'));
+        }
+    },
     credentials: true,
 }))
 

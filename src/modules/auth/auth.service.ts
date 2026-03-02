@@ -3,6 +3,8 @@ import jwt from "jsonwebtoken";
 import prisma from "../../config/prisma";
 import { v4 as uuidv4 } from "uuid";
 import { AppError } from "../../utils/AppError";
+import speakeasy from "speakeasy";
+import { decrypt } from "../../utils/crypto.utils";
 
 const ACCESS_TOKEN_EXPIRES = "15m";
 const REFRESH_TOKEN_EXPIRES_DAYS = 7;
@@ -118,6 +120,17 @@ export class AuthService {
             data: { failedAttempts: 0, lockedUntil: null },
         });
 
+        // Check if 2FA is enabled
+        if ((user as any).twoFactorEnabled) {
+            const tempToken = jwt.sign(
+                { sub: user.id, type: "2fa" },
+                process.env.JWT_SECRET || process.env.ACCESS_TOKEN_SECRET!,
+                { expiresIn: "5m" }
+            );
+
+            return { twoFactorRequired: true, tempToken };
+        }
+
         const sessionId = uuidv4();
 
         const refreshToken = jwt.sign(
@@ -144,6 +157,73 @@ export class AuthService {
                 expiresAt: new Date(
                     Date.now() + REFRESH_TOKEN_EXPIRES_DAYS * 24 * 60 * 60 * 1000
                 ),
+            },
+        });
+
+        return {
+            accessToken,
+            refreshToken,
+            user: { id: user.id, email: user.email, role: (user as any).role, avatarSeed: (user as any).avatarSeed || user.email, avatarStyle: (user as any).avatarStyle }
+        };
+    }
+
+    static async verify2faLogin(tempToken: string, code: string, userAgent?: string, ip?: string) {
+        let payload: any;
+        try {
+            payload = jwt.verify(tempToken, process.env.JWT_SECRET || process.env.ACCESS_TOKEN_SECRET!);
+        } catch (error) {
+            throw new AppError("Invalid or expired temporary token", 401);
+        }
+
+        if (payload.type !== "2fa") {
+            throw new AppError("Invalid token type", 401);
+        }
+
+        const user = await prisma.user.findUnique({
+            where: { id: payload.sub }
+        });
+
+        if (!user || !(user as any).twoFactorEnabled || !(user as any).twoFactorSecret) {
+            throw new AppError("2FA is not properly configured for this user", 400);
+        }
+
+        const decryptedSecret = decrypt((user as any).twoFactorSecret);
+
+        const verified = speakeasy.totp.verify({
+            secret: decryptedSecret,
+            encoding: "base32",
+            token: code,
+            window: 1 // Allow 30 seconds before and after
+        });
+
+        if (!verified) {
+            throw new AppError("Invalid 2FA code", 400);
+        }
+
+        const sessionId = uuidv4();
+
+        const refreshToken = jwt.sign(
+            { sub: user.id, sid: sessionId, role: (user as any).role, email: user.email },
+            process.env.REFRESH_TOKEN_SECRET!,
+            { expiresIn: `${REFRESH_TOKEN_EXPIRES_DAYS}d` }
+        );
+
+        const accessToken = jwt.sign(
+            { sub: user.id, sid: sessionId, role: (user as any).role, email: user.email },
+            process.env.ACCESS_TOKEN_SECRET!,
+            { expiresIn: ACCESS_TOKEN_EXPIRES }
+        );
+
+        const tokenHash = await bcrypt.hash(refreshToken, 10);
+
+        await prisma.session.create({
+            data: {
+                id: sessionId,
+                userId: user.id,
+                tokenHash,
+                userAgent,
+                ip,
+                expiresAt: new Date(Date.now() + REFRESH_TOKEN_EXPIRES_DAYS * 24 * 60 * 60 * 1000),
             },
         });
 
