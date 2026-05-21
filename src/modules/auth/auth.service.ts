@@ -537,4 +537,84 @@ export class AuthService {
         });
         return { message: "2FA disabled" };
     }
+
+    static async forgotPassword(email: string) {
+        const user = await prisma.user.findUnique({
+            where: { email: email.trim() },
+        });
+
+        if (!user) {
+            return {
+                message: "If the email is registered, a password reset link has been sent.",
+                mockSent: false,
+                email: email.trim()
+            };
+        }
+
+        const secret = (process.env.JWT_SECRET || process.env.ACCESS_TOKEN_SECRET!) + (user.passwordHash || "");
+        const token = jwt.sign(
+            { sub: user.id, email: user.email },
+            secret,
+            { expiresIn: "15m" }
+        );
+
+        return {
+            message: "Password reset link sent successfully.",
+            token,
+            mockSent: true,
+            email: user.email
+        };
+    }
+
+    static async resetPassword(token: string, newPassword: string) {
+        let decoded: any;
+        try {
+            decoded = jwt.decode(token);
+        } catch (error) {
+            throw new AppError("Invalid or malformed reset token", 400);
+        }
+
+        if (!decoded || !decoded.sub) {
+            throw new AppError("Invalid or expired reset token", 400);
+        }
+
+        const user = await prisma.user.findUnique({
+            where: { id: decoded.sub }
+        });
+
+        if (!user) {
+            throw new AppError("User not found", 404);
+        }
+
+        const secret = (process.env.JWT_SECRET || process.env.ACCESS_TOKEN_SECRET!) + (user.passwordHash || "");
+        try {
+            jwt.verify(token, secret);
+        } catch (error) {
+            throw new AppError("Invalid or expired reset token", 400);
+        }
+
+        const passwordRegex = /^(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&])[A-Za-z\d@$!%*?&]{8,}$/;
+        if (!passwordRegex.test(newPassword)) {
+            throw new AppError("Password must be at least 8 characters long, contain 1 uppercase letter, 1 number, and 1 special character", 400);
+        }
+
+        const passwordHash = await bcrypt.hash(newPassword, 12);
+
+        await prisma.user.update({
+            where: { id: user.id },
+            data: {
+                passwordHash,
+                failedAttempts: 0,
+                lockedUntil: null
+            }
+        });
+
+        // Revoke all existing sessions for security
+        await prisma.session.updateMany({
+            where: { userId: user.id, revokedAt: null },
+            data: { revokedAt: new Date() }
+        });
+
+        return { message: "Password has been reset successfully." };
+    }
 }

@@ -202,4 +202,22 @@ export class AuthController {
         const result = await AuthService.disable2fa(req.user.sub);
         res.status(200).json(result);
     });
+
+    static forgotPassword = catchAsync(async (req: Request, res: Response) => {
+        const { email } = req.body;
+        if (!email) {
+            throw new AppError("Email is required", 400);
+        }
+        const result = await AuthService.forgotPassword(email);
+        res.status(200).json(result);
+    });
+
+    static resetPassword = catchAsync(async (req: Request, res: Response) => {
+        const { token, password } = req.body;
+        if (!token || !password) {
+            throw new AppError("Token and password are required", 400);
+        }
+        const result = await AuthService.resetPassword(token, password);
+        res.status(200).json(result);
+    });
 }

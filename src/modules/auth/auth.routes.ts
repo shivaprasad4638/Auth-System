@@ -18,6 +18,8 @@ router.delete("/sessions", authenticate, AuthController.revokeAllSessions);
 
 router.post("/send-otp", AuthController.sendOtp);
 router.post("/verify-otp", AuthController.verifyOtp);
+router.post("/forgot-password", AuthController.forgotPassword);
+router.post("/reset-password", AuthController.resetPassword);
 
 // 2FA setup routes (require authentication)
 router.post("/2fa/enable", authenticate, AuthController.enable2fa);
